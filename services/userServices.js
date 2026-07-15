@@ -2274,7 +2274,7 @@ module.exports = {
   // Middleware (export for routes)
 
   //sm practice
-  //getSmPracticeLabCategories
+
   getSmPracticeLabFlow: wrap(getSmPracticeLabFlow),
   submitSmPracticeLab: wrap(submitSmPracticeLab),
   getSmPracticeLabCategories: wrap(getSmPracticeLabCategories),

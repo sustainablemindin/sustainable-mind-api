@@ -11,6 +11,450 @@ const RC = "responsibility_categories";
 const HA = "helpful-actions";
 const HAC = "helpful-action-categories";
 
+const DIFFICULTIES = ["Easy", "Medium", "Hard"];
+const FRIENDS = ["blaze", "shello", "champ", "tejix"];
+
+const addSmPracticeLabCategory = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.name || !data.name.trim()) {
+      return reject({
+        status: 400,
+        message: "Category name is required",
+        data: [],
+      });
+    }
+    const doc = {
+      name: data.name.trim(),
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    db.collection("sm-practice-lab-category")
+      .insertOne(doc)
+      .then((r) =>
+        resolve({
+          status: 200,
+          message: "Category created",
+          data: [{ _id: r.insertedId, ...doc }],
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to create category",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getAllSmPracticeLabCategories = (filters) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const query = {};
+    if (filters && filters.search) {
+      const safe = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.name = { $regex: safe, $options: "i" };
+    }
+    if (filters && filters.status)
+      query.isActive = filters.status.toLowerCase() === "active";
+
+    db.collection("sm-practice-lab-category")
+      .find(query)
+      .sort({ name: 1 })
+      .toArray()
+      .then((items) =>
+        resolve({ status: 200, message: "Categories fetched", data: items }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch categories",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getSmPracticeLabCategoryById = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-category")
+      .findOne({ _id: new ObjectId(data.categoryId) })
+      .then((r) =>
+        r
+          ? resolve({ status: 200, message: "Category fetched", data: [r] })
+          : reject({ status: 404, message: "Category not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to fetch category",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const updateSmPracticeLabCategory = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const updates = { updatedAt: new Date() };
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.isActive !== undefined) updates.isActive = data.isActive;
+
+    db.collection("sm-practice-lab-category")
+      .updateOne({ _id: new ObjectId(data.categoryId) }, { $set: updates })
+      .then((r) =>
+        r.matchedCount
+          ? resolve({ status: 200, message: "Category updated", data: [] })
+          : reject({ status: 404, message: "Category not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to update category",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const deleteSmPracticeLabCategory = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-category")
+      .deleteOne({ _id: new ObjectId(data.categoryId) })
+      .then((r) =>
+        r.deletedCount
+          ? resolve({ status: 200, message: "Category deleted", data: [] })
+          : reject({ status: 404, message: "Category not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to delete category",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const addSmPracticeLabSituation = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.situation || !data.situation.trim()) {
+      return reject({
+        status: 400,
+        message: "Situation is required",
+        data: [],
+      });
+    }
+    if (!data.category || !data.category.trim()) {
+      return reject({ status: 400, message: "Category is required", data: [] });
+    }
+    if (!DIFFICULTIES.includes(data.difficulty)) {
+      return reject({
+        status: 400,
+        message: "Difficulty must be Easy, Medium or Hard",
+        data: [],
+      });
+    }
+    if (!(Number(data.smKeyReward) > 0)) {
+      return reject({
+        status: 400,
+        message: "Reward must be greater than 0",
+        data: [],
+      });
+    }
+    const missing = FRIENDS.find((f) => !data[f] || !String(data[f]).trim());
+    if (missing) {
+      return reject({
+        status: 400,
+        message: `${missing} response is required`,
+        data: [],
+      });
+    }
+
+    const doc = {
+      situation: data.situation.trim(),
+      category: data.category.trim(),
+      difficulty: data.difficulty,
+      smKeyReward: Number(data.smKeyReward),
+      blaze: String(data.blaze).trim(),
+      shello: String(data.shello).trim(),
+      champ: String(data.champ).trim(),
+      tejix: String(data.tejix).trim(),
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    db.collection("sm-practice-lab-situation")
+      .insertOne(doc)
+      .then((r) =>
+        resolve({
+          status: 200,
+          message: "Situation created",
+          data: [{ _id: r.insertedId, ...doc }],
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to create situation",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const bulkAddSmPracticeLabSituations = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      return reject({ status: 400, message: "No items to import", data: [] });
+    }
+
+    const now = new Date();
+    const docs = [];
+    for (let i = 0; i < data.items.length; i++) {
+      const it = data.items[i];
+      if (!it.situation || !String(it.situation).trim()) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: situation is required`,
+          data: [],
+        });
+      }
+      if (!it.category || !String(it.category).trim()) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: category is required`,
+          data: [],
+        });
+      }
+      if (!DIFFICULTIES.includes(it.difficulty)) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: difficulty must be Easy, Medium or Hard`,
+          data: [],
+        });
+      }
+      if (!(Number(it.smKeyReward) > 0)) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: reward must be greater than 0`,
+          data: [],
+        });
+      }
+      const missing = FRIENDS.find((f) => !it[f] || !String(it[f]).trim());
+      if (missing) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: ${missing} response is required`,
+          data: [],
+        });
+      }
+
+      docs.push({
+        situation: String(it.situation).trim(),
+        category: String(it.category).trim(),
+        difficulty: it.difficulty,
+        smKeyReward: Number(it.smKeyReward),
+        blaze: String(it.blaze).trim(),
+        shello: String(it.shello).trim(),
+        champ: String(it.champ).trim(),
+        tejix: String(it.tejix).trim(),
+        isActive: it.isActive !== undefined ? it.isActive : true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    db.collection("sm-practice-lab-situation")
+      .insertMany(docs)
+      .then((r) =>
+        resolve({
+          status: 200,
+          message: "Situations imported",
+          data: [{ inserted: r.insertedCount }],
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to import situations",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getAllSmPracticeLabSituations = (filters) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const query = {};
+    if (filters && filters.search) {
+      const safe = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.situation = { $regex: safe, $options: "i" };
+    }
+    if (filters && filters.category) query.category = filters.category;
+    if (filters && filters.difficulty) query.difficulty = filters.difficulty;
+    if (filters && filters.status)
+      query.isActive = filters.status.toLowerCase() === "active";
+
+    const page = Number(filters && filters.page) > 0 ? Number(filters.page) : 1;
+    const limit =
+      Number(filters && filters.limit) > 0 ? Number(filters.limit) : 10;
+    const skip = (page - 1) * limit;
+
+    const col = db.collection("sm-practice-lab-situation");
+
+    col
+      .countDocuments(query)
+      .then((total) => {
+        return col
+          .find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray()
+          .then((items) =>
+            resolve({
+              status: 200,
+              message: "Situations fetched",
+              data: items,
+              pagination: {
+                total: total,
+                page: page,
+                limit: limit,
+                totalPages: Math.ceil(total / limit) || 1,
+              },
+            }),
+          );
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch situations",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getSmPracticeLabSituationById = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-situation")
+      .findOne({ _id: new ObjectId(data.situationId) })
+      .then((r) =>
+        r
+          ? resolve({ status: 200, message: "Situation fetched", data: [r] })
+          : reject({ status: 404, message: "Situation not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to fetch situation",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const updateSmPracticeLabSituation = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const updates = { updatedAt: new Date() };
+    if (data.situation !== undefined) updates.situation = data.situation;
+    if (data.category !== undefined) updates.category = data.category;
+    if (data.difficulty !== undefined) updates.difficulty = data.difficulty;
+    if (data.smKeyReward !== undefined)
+      updates.smKeyReward = Number(data.smKeyReward);
+    if (data.blaze !== undefined) updates.blaze = data.blaze;
+    if (data.shello !== undefined) updates.shello = data.shello;
+    if (data.champ !== undefined) updates.champ = data.champ;
+    if (data.tejix !== undefined) updates.tejix = data.tejix;
+    if (data.isActive !== undefined) updates.isActive = data.isActive;
+
+    db.collection("sm-practice-lab-situation")
+      .updateOne({ _id: new ObjectId(data.situationId) }, { $set: updates })
+      .then((r) =>
+        r.matchedCount
+          ? resolve({ status: 200, message: "Situation updated", data: [] })
+          : reject({ status: 404, message: "Situation not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to update situation",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const deleteSmPracticeLabSituation = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-situation")
+      .deleteOne({ _id: new ObjectId(data.situationId) })
+      .then((r) =>
+        r.deletedCount
+          ? resolve({ status: 200, message: "Situation deleted", data: [] })
+          : reject({ status: 404, message: "Situation not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to delete situation",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// ============================================================
+// APP SIDE - one random active situation for the Practice Lab
+// ============================================================
+const getSmPracticeLabSituationForApp = () => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-situation")
+      .aggregate([{ $match: { isActive: true } }, { $sample: { size: 1 } }])
+      .toArray()
+      .then((items) =>
+        resolve({
+          status: 200,
+          message: "Situation fetched",
+          data: items,
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch situation",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
 const bulkAddPracticeLabSituations = (data) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
@@ -3131,4 +3575,20 @@ module.exports = {
 
   bulkAddGrowthFocusSituations: wrap(bulkAddGrowthFocusSituations),
   bulkAddPracticeLabSituations: wrap(bulkAddPracticeLabSituations),
+
+  // ---------- SM Practice Lab - Categories ----------
+  addSmPracticeLabCategory: wrap(addSmPracticeLabCategory),
+  getAllSmPracticeLabCategories: wrap(getAllSmPracticeLabCategories),
+  getSmPracticeLabCategoryById: wrap(getSmPracticeLabCategoryById),
+  updateSmPracticeLabCategory: wrap(updateSmPracticeLabCategory),
+  deleteSmPracticeLabCategory: wrap(deleteSmPracticeLabCategory),
+
+  // ---------- SM Practice Lab - Situations ----------
+  addSmPracticeLabSituation: wrap(addSmPracticeLabSituation),
+  bulkAddSmPracticeLabSituations: wrap(bulkAddSmPracticeLabSituations),
+  getAllSmPracticeLabSituations: wrap(getAllSmPracticeLabSituations),
+  getSmPracticeLabSituationById: wrap(getSmPracticeLabSituationById),
+  updateSmPracticeLabSituation: wrap(updateSmPracticeLabSituation),
+  deleteSmPracticeLabSituation: wrap(deleteSmPracticeLabSituation),
+  getSmPracticeLabSituationForApp: wrap(getSmPracticeLabSituationForApp),
 };

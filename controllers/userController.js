@@ -446,4 +446,51 @@ module.exports = {
         });
       });
   },
+  /* ============================================================
+     SM PRACTICE LAB
+     ============================================================ */
+
+  getSmPracticeLabFlow: (req, res, next) => {
+    userService
+      .getSmPracticeLabFlow(req.query)
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+
+  submitSmPracticeLab: (req, res, next) => {
+    userService
+      .submitSmPracticeLab(req.body)
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+  getSmPracticeLabCategories: (req, res, next) => {
+    userService
+      .getSmPracticeLabCategories()
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
 };

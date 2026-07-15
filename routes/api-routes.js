@@ -24,6 +24,14 @@ router.put("/profile", userController.updateProfile);
 router.put("/change-password", userController.changePassword);
 router.delete("/delete-account", userController.deleteAccount);
 
+/* ============== USER - SM PRACTICE LAB ============== */
+router.get("/sm-practice-lab", userController.getSmPracticeLabFlow);
+router.post("/submit-sm-practice-lab", userController.submitSmPracticeLab);
+router.get(
+  "/sm-practice-lab-categories",
+  userController.getSmPracticeLabCategories,
+);
+
 /* ============== USER - STORIES (browse) ============== */
 router.get("/home/:userId", userController.getHomeFeed);
 router.get("/stories", userController.getStoriesByCategory);
@@ -322,4 +330,54 @@ router.post(
   "/admin/bulk-add-practice-lab-situations",
   adminController.bulkAddPracticeLabSituations,
 );
+// ---------- SM Practice Lab - Categories ----------
+router.get(
+  "/admin/sm-practice-lab-categories",
+  adminController.getAllSmPracticeLabCategories,
+);
+router.post(
+  "/admin/add-sm-practice-lab-category",
+  adminController.addSmPracticeLabCategory,
+);
+router.get(
+  "/admin/sm-practice-lab-category/:id",
+  adminController.getSmPracticeLabCategoryById,
+);
+router.put(
+  "/admin/update-sm-practice-lab-category/:id",
+  adminController.updateSmPracticeLabCategory,
+);
+router.delete(
+  "/admin/delete-sm-practice-lab-category/:id",
+  adminController.deleteSmPracticeLabCategory,
+);
+
+// ---------- SM Practice Lab - Situations ----------
+router.get(
+  "/admin/sm-practice-lab-situations",
+  adminController.getAllSmPracticeLabSituations,
+);
+router.post(
+  "/admin/add-sm-practice-lab-situation",
+  adminController.addSmPracticeLabSituation,
+);
+router.post(
+  "/admin/bulk-add-sm-practice-lab-situations",
+  adminController.bulkAddSmPracticeLabSituations,
+);
+router.get(
+  "/admin/sm-practice-lab-situation/:id",
+  adminController.getSmPracticeLabSituationById,
+);
+router.put(
+  "/admin/update-sm-practice-lab-situation/:id",
+  adminController.updateSmPracticeLabSituation,
+);
+router.delete(
+  "/admin/delete-sm-practice-lab-situation/:id",
+  adminController.deleteSmPracticeLabSituation,
+);
+
+// ---------- SM Practice Lab - App side ----------
+router.get("/sm-practice-lab", adminController.getSmPracticeLabSituationForApp);
 module.exports = router;

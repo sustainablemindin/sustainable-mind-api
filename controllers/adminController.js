@@ -703,4 +703,61 @@ module.exports = {
     handle(adminService.bulkAddGrowthFocusSituations(req.body), res),
   bulkAddPracticeLabSituations: (req, res) =>
     handle(adminService.bulkAddPracticeLabSituations(req.body), res),
+
+  // ---------- SM Practice Lab - Categories ----------
+  addSmPracticeLabCategory: (req, res) =>
+    handle(adminService.addSmPracticeLabCategory(req.body), res),
+  getAllSmPracticeLabCategories: (req, res) =>
+    handle(adminService.getAllSmPracticeLabCategories(req.query), res),
+  getSmPracticeLabCategoryById: (req, res) =>
+    handle(
+      adminService.getSmPracticeLabCategoryById({ categoryId: req.params.id }),
+      res,
+    ),
+  updateSmPracticeLabCategory: (req, res) =>
+    handle(
+      adminService.updateSmPracticeLabCategory({
+        categoryId: req.params.id,
+        ...req.body,
+      }),
+      res,
+    ),
+  deleteSmPracticeLabCategory: (req, res) =>
+    handle(
+      adminService.deleteSmPracticeLabCategory({ categoryId: req.params.id }),
+      res,
+    ),
+
+  // ---------- SM Practice Lab - Situations ----------
+  addSmPracticeLabSituation: (req, res) =>
+    handle(adminService.addSmPracticeLabSituation(req.body), res),
+  bulkAddSmPracticeLabSituations: (req, res) =>
+    handle(adminService.bulkAddSmPracticeLabSituations(req.body), res),
+  getAllSmPracticeLabSituations: (req, res) =>
+    handle(adminService.getAllSmPracticeLabSituations(req.query), res),
+  getSmPracticeLabSituationById: (req, res) =>
+    handle(
+      adminService.getSmPracticeLabSituationById({
+        situationId: req.params.id,
+      }),
+      res,
+    ),
+  updateSmPracticeLabSituation: (req, res) =>
+    handle(
+      adminService.updateSmPracticeLabSituation({
+        situationId: req.params.id,
+        ...req.body,
+      }),
+      res,
+    ),
+  deleteSmPracticeLabSituation: (req, res) =>
+    handle(
+      adminService.deleteSmPracticeLabSituation({
+        situationId: req.params.id,
+        ...req.body,
+      }),
+      res,
+    ),
+  getSmPracticeLabSituationForApp: (req, res) =>
+    handle(adminService.getSmPracticeLabSituationForApp(), res),
 };

@@ -22,6 +22,257 @@ function dayBounds() {
   end.setHours(23, 59, 59, 999);
   return { start, end };
 }
+const getSmPracticeLabCategories = () => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-category")
+      .find({ isActive: true })
+      .sort({ name: 1 })
+      .toArray()
+      .then((items) =>
+        resolve({ status: 200, message: "Categories fetched", data: items }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch categories",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getSmPracticeLabFlow = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const friends = ["blaze", "shello", "champ", "tejix"];
+
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+    if (!data.category) {
+      return reject({ status: 400, message: "category required", data: [] });
+    }
+
+    const query = { isActive: true, category: data.category };
+
+    Promise.all([
+      db
+        .collection("sm-practice-lab-situation")
+        .find(query)
+        .sort({ createdAt: 1 })
+        .toArray(),
+      db
+        .collection("sm-practice-lab-submit")
+        .find({ userId: data.userId, category: data.category, isCorrect: true })
+        .toArray(),
+    ])
+      .then(([situations, submits]) => {
+        if (situations.length === 0) {
+          return resolve({
+            status: 200,
+            message: "No situations in this category",
+            data: [
+              {
+                completed: true,
+                solvedCount: 0,
+                totalCount: 0,
+                situation: null,
+              },
+            ],
+          });
+        }
+
+        // ids the child has already solved correctly
+        const solvedIds = {};
+        submits.forEach((s) => {
+          solvedIds[String(s.situationId)] = true;
+        });
+
+        // first situation, in order, that is not solved yet
+        const next = situations.find((s) => !solvedIds[String(s._id)]);
+        const solvedCount = situations.filter(
+          (s) => solvedIds[String(s._id)],
+        ).length;
+
+        if (!next) {
+          return resolve({
+            status: 200,
+            message: "Category completed",
+            data: [
+              {
+                completed: true,
+                solvedCount: solvedCount,
+                totalCount: situations.length,
+                situation: null,
+              },
+            ],
+          });
+        }
+
+        // friend texts are shuffled so the drag order is not a giveaway
+        const responses = friends.map((f) => ({
+          key: f,
+          text: next[f],
+        }));
+        for (let i = responses.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const t = responses[i];
+          responses[i] = responses[j];
+          responses[j] = t;
+        }
+
+        resolve({
+          status: 200,
+          message: "Situation fetched",
+          data: [
+            {
+              completed: false,
+              solvedCount: solvedCount,
+              totalCount: situations.length,
+              situationNumber: solvedCount + 1,
+              situation: {
+                _id: next._id,
+                situation: next.situation,
+                category: next.category,
+                difficulty: next.difficulty,
+                smKeyReward: next.smKeyReward,
+                responses: responses,
+              },
+            },
+          ],
+        });
+      })
+      .catch((error) => {
+        reject({
+          status: 400,
+          message: "Unable to load practice lab",
+          data: [],
+          error: error.message,
+        });
+      });
+  });
+};
+
+const submitSmPracticeLab = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const friends = ["blaze", "shello", "champ", "tejix"];
+
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+    if (!data.situationId) {
+      return reject({ status: 400, message: "situationId required", data: [] });
+    }
+    if (!data.answers || typeof data.answers !== "object") {
+      return reject({ status: 400, message: "answers required", data: [] });
+    }
+
+    db.collection("sm-practice-lab-situation")
+      .findOne({ _id: new ObjectId(data.situationId) })
+      .then((situation) => {
+        if (!situation) {
+          return reject({
+            status: 404,
+            message: "Situation not found",
+            data: [],
+          });
+        }
+
+        // compare each dropped text against the friend it belongs to
+        const results = {};
+        let correctCount = 0;
+        friends.forEach((f) => {
+          const given = String(data.answers[f] || "").trim();
+          const expected = String(situation[f] || "").trim();
+          const ok = given.length > 0 && given === expected;
+          results[f] = ok;
+          if (ok) correctCount++;
+        });
+
+        const isCorrect = correctCount === friends.length;
+        const keysEarned = isCorrect ? Number(situation.smKeyReward) || 0 : 0;
+
+        const entry = {
+          userId: data.userId,
+          situationId: situation._id,
+          category: situation.category,
+          situationText: situation.situation,
+          difficulty: situation.difficulty,
+          answers: {
+            blaze: String(data.answers.blaze || "").trim(),
+            shello: String(data.answers.shello || "").trim(),
+            champ: String(data.answers.champ || "").trim(),
+            tejix: String(data.answers.tejix || "").trim(),
+          },
+          results: results,
+          correctCount: correctCount,
+          isCorrect: isCorrect,
+          keysEarned: keysEarned,
+          createdAt: new Date(),
+        };
+
+        return db
+          .collection("sm-practice-lab-submit")
+          .insertOne(entry)
+          .then(() => {
+            // wrong attempt: recorded, no keys, child can retry
+            if (!isCorrect) {
+              return resolve({
+                status: 200,
+                message: "Not quite. Try again!",
+                data: [
+                  {
+                    isCorrect: false,
+                    correctCount: correctCount,
+                    results: results,
+                    keysEarned: 0,
+                    sm_key: null,
+                  },
+                ],
+              });
+            }
+
+            return db
+              .collection("users")
+              .findOneAndUpdate(
+                { _id: new ObjectId(data.userId) },
+                {
+                  $inc: { sm_key: keysEarned },
+                  $set: { updatedAt: new Date() },
+                },
+                { returnDocument: "after" },
+              )
+              .then((result) => {
+                const user = result && result.value ? result.value : null;
+                resolve({
+                  status: 200,
+                  message: "Practice lab completed",
+                  data: [
+                    {
+                      isCorrect: true,
+                      correctCount: correctCount,
+                      results: results,
+                      keysEarned: keysEarned,
+                      sm_key: user ? user.sm_key : keysEarned,
+                    },
+                  ],
+                });
+              });
+          });
+      })
+      .catch((error) => {
+        reject({
+          status: 400,
+          message: "Unable to submit practice lab",
+          data: [],
+          error: error.message,
+        });
+      });
+  });
+};
 const submitTreasureHunt = (data) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
@@ -138,60 +389,61 @@ const getEveningFlow = (userId) => {
         data: [],
       });
     }
-    const { start, end } = dayBounds();
+    // const { start, end } = dayBounds();
 
-    db.collection("eveningEntries")
-      .findOne({
-        userId: userId,
-        createdAt: { $gte: start, $lte: end },
-      })
-      .then((existing) => {
-        if (existing) {
-          return resolve({
-            status: 200,
-            message: "Evening already done today",
-            data: [
-              {
-                alreadyDone: true,
-                completedField: existing.createdAt,
-                homeResponsibility: [],
-                helpCategories: [],
-                helpActions: [],
-              },
-            ],
-          });
-        }
+    // ---- daily check disabled for now ----
+    // db.collection("eveningEntries")
+    //   .findOne({
+    //     userId: userId,
+    //     createdAt: { $gte: start, $lte: end },
+    //   })
+    //   .then((existing) => {
+    //     if (existing) {
+    //       return resolve({
+    //         status: 200,
+    //         message: "Evening already done today",
+    //         data: [
+    //           {
+    //             alreadyDone: true,
+    //             completedField: existing.createdAt,
+    //             homeResponsibility: [],
+    //             helpCategories: [],
+    //             helpActions: [],
+    //           },
+    //         ],
+    //       });
+    //     }
 
-        return Promise.all([
-          db
-            .collection("responsibility_management")
-            .find({ isActive: true })
-            .limit(10)
-            .toArray(),
-          db
-            .collection("helpful-action-categories")
-            .find({ isActive: true })
-            .limit(10)
-            .toArray(),
-          db
-            .collection("helpful-actions")
-            .find({ isActive: true })
-            .limit(50)
-            .toArray(),
-        ]).then(([homeResponsibility, helpCategories, helpActions]) => {
-          resolve({
-            status: 200,
-            message: "Evening flow",
-            data: [
-              {
-                alreadyDone: false,
-                completedField: null,
-                homeResponsibility: homeResponsibility,
-                helpCategories: helpCategories,
-                helpActions: helpActions,
-              },
-            ],
-          });
+    Promise.all([
+      db
+        .collection("responsibility_management")
+        .find({ isActive: true })
+        .limit(10)
+        .toArray(),
+      db
+        .collection("helpful-action-categories")
+        .find({ isActive: true })
+        .limit(10)
+        .toArray(),
+      db
+        .collection("helpful-actions")
+        .find({ isActive: true })
+        .limit(50)
+        .toArray(),
+    ])
+      .then(([homeResponsibility, helpCategories, helpActions]) => {
+        resolve({
+          status: 200,
+          message: "Evening flow",
+          data: [
+            {
+              alreadyDone: false,
+              completedField: null,
+              homeResponsibility: homeResponsibility,
+              helpCategories: helpCategories,
+              helpActions: helpActions,
+            },
+          ],
         });
       })
       .catch((error) => {
@@ -204,6 +456,82 @@ const getEveningFlow = (userId) => {
       });
   });
 };
+// const getEveningFlow = (userId) => {
+//   return new Promise((resolve, reject) => {
+//     const db = getDb();
+//     if (!userId) {
+//       return reject({
+//         status: 400,
+//         message: "userId required",
+//         data: [],
+//       });
+//     }
+//     const { start, end } = dayBounds();
+
+//     db.collection("eveningEntries")
+//       .findOne({
+//         userId: userId,
+//         createdAt: { $gte: start, $lte: end },
+//       })
+//       .then((existing) => {
+//         if (existing) {
+//           return resolve({
+//             status: 200,
+//             message: "Evening already done today",
+//             data: [
+//               {
+//                 alreadyDone: true,
+//                 completedField: existing.createdAt,
+//                 homeResponsibility: [],
+//                 helpCategories: [],
+//                 helpActions: [],
+//               },
+//             ],
+//           });
+//         }
+
+//         return Promise.all([
+//           db
+//             .collection("responsibility_management")
+//             .find({ isActive: true })
+//             .limit(10)
+//             .toArray(),
+//           db
+//             .collection("helpful-action-categories")
+//             .find({ isActive: true })
+//             .limit(10)
+//             .toArray(),
+//           db
+//             .collection("helpful-actions")
+//             .find({ isActive: true })
+//             .limit(50)
+//             .toArray(),
+//         ]).then(([homeResponsibility, helpCategories, helpActions]) => {
+//           resolve({
+//             status: 200,
+//             message: "Evening flow",
+//             data: [
+//               {
+//                 alreadyDone: false,
+//                 completedField: null,
+//                 homeResponsibility: homeResponsibility,
+//                 helpCategories: helpCategories,
+//                 helpActions: helpActions,
+//               },
+//             ],
+//           });
+//         });
+//       })
+//       .catch((error) => {
+//         reject({
+//           status: 400,
+//           message: "Unable to load evening flow",
+//           data: [],
+//           error: error.message,
+//         });
+//       });
+//   });
+// };
 
 const completeEvening = (data) => {
   return new Promise((resolve, reject) => {
@@ -285,69 +613,67 @@ const getMorningFlow = (userId) => {
         data: [],
       });
     }
-    const { start, end } = dayBounds();
+    // const { start, end } = dayBounds();
 
-    db.collection("morningEntries")
-      .findOne({
-        userId: userId,
-        createdAt: { $gte: start, $lte: end },
-      })
-      .then((existing) => {
-        if (existing) {
-          return resolve({
-            status: 200,
-            message: "Morning already done today",
-            data: [
-              {
-                alreadyDone: true,
-                completedField: existing.createdAt,
-                gratitude: [],
-                greeting: [],
-                responsibility: [],
-                practiceLab: null,
-              },
-            ],
-          });
-        }
+    // ---- daily check disabled for now ----
+    // db.collection("morningEntries")
+    //   .findOne({
+    //     userId: userId,
+    //     createdAt: { $gte: start, $lte: end },
+    //   })
+    //   .then((existing) => {
+    //     if (existing) {
+    //       return resolve({
+    //         status: 200,
+    //         message: "Morning already done today",
+    //         data: [
+    //           {
+    //             alreadyDone: true,
+    //             completedField: existing.createdAt,
+    //             gratitude: [],
+    //             greeting: [],
+    //             responsibility: [],
+    //             practiceLab: null,
+    //           },
+    //         ],
+    //       });
+    //     }
 
-        return Promise.all([
-          db
-            .collection("gratitude-pause")
-            .find({ isActive: true })
-            .limit(10)
-            .toArray(),
-          db
-            .collection("greeting-challenge")
-            .find({ isActive: true })
-            .limit(10)
-            .toArray(),
-          db
-            .collection("responsibility_management")
-            .find({ isActive: true })
-            .limit(10)
-            .toArray(),
-          db
-            .collection("practice-lab-situation")
-            .aggregate([
-              { $match: { isActive: true } },
-              { $sample: { size: 1 } },
-            ])
-            .toArray(),
-        ]).then(([gratitude, greeting, responsibility, practice]) => {
-          resolve({
-            status: 200,
-            message: "Morning flow",
-            data: [
-              {
-                alreadyDone: false,
-                completedField: null,
-                gratitude: gratitude,
-                greeting: greeting,
-                responsibility: responsibility,
-                practiceLab: practice.length > 0 ? practice[0] : null,
-              },
-            ],
-          });
+    Promise.all([
+      db
+        .collection("gratitude-pause")
+        .find({ isActive: true })
+        .limit(10)
+        .toArray(),
+      db
+        .collection("greeting-challenge")
+        .find({ isActive: true })
+        .limit(10)
+        .toArray(),
+      db
+        .collection("responsibility_management")
+        .find({ isActive: true })
+        .limit(10)
+        .toArray(),
+      db
+        .collection("practice-lab-situation")
+        .aggregate([{ $match: { isActive: true } }, { $sample: { size: 1 } }])
+        .toArray(),
+    ])
+      .then(([gratitude, greeting, responsibility, practice]) => {
+        resolve({
+          status: 200,
+          message: "Morning flow",
+          data: [
+            {
+              alreadyDone: false,
+              completedField: null,
+              gratitude: gratitude,
+              greeting: greeting,
+              responsibility: responsibility,
+              practiceLab: practice.length > 0 ? practice[0] : null,
+            },
+          ],
         });
       })
       .catch((error) => {
@@ -360,6 +686,91 @@ const getMorningFlow = (userId) => {
       });
   });
 };
+// const getMorningFlow = (userId) => {
+//   return new Promise((resolve, reject) => {
+//     const db = getDb();
+//     if (!userId) {
+//       return reject({
+//         status: 400,
+//         message: "userId required",
+//         data: [],
+//       });
+//     }
+//     const { start, end } = dayBounds();
+
+//     db.collection("morningEntries")
+//       .findOne({
+//         userId: userId,
+//         createdAt: { $gte: start, $lte: end },
+//       })
+//       .then((existing) => {
+//         if (existing) {
+//           return resolve({
+//             status: 200,
+//             message: "Morning already done today",
+//             data: [
+//               {
+//                 alreadyDone: true,
+//                 completedField: existing.createdAt,
+//                 gratitude: [],
+//                 greeting: [],
+//                 responsibility: [],
+//                 practiceLab: null,
+//               },
+//             ],
+//           });
+//         }
+
+//         return Promise.all([
+//           db
+//             .collection("gratitude-pause")
+//             .find({ isActive: true })
+//             .limit(10)
+//             .toArray(),
+//           db
+//             .collection("greeting-challenge")
+//             .find({ isActive: true })
+//             .limit(10)
+//             .toArray(),
+//           db
+//             .collection("responsibility_management")
+//             .find({ isActive: true })
+//             .limit(10)
+//             .toArray(),
+//           db
+//             .collection("practice-lab-situation")
+//             .aggregate([
+//               { $match: { isActive: true } },
+//               { $sample: { size: 1 } },
+//             ])
+//             .toArray(),
+//         ]).then(([gratitude, greeting, responsibility, practice]) => {
+//           resolve({
+//             status: 200,
+//             message: "Morning flow",
+//             data: [
+//               {
+//                 alreadyDone: false,
+//                 completedField: null,
+//                 gratitude: gratitude,
+//                 greeting: greeting,
+//                 responsibility: responsibility,
+//                 practiceLab: practice.length > 0 ? practice[0] : null,
+//               },
+//             ],
+//           });
+//         });
+//       })
+//       .catch((error) => {
+//         reject({
+//           status: 400,
+//           message: "Unable to load morning flow",
+//           data: [],
+//           error: error.message,
+//         });
+//       });
+//   });
+// };
 
 const completeMorning = (data) => {
   return new Promise((resolve, reject) => {
@@ -1861,5 +2272,11 @@ module.exports = {
   submitTreasureHunt: wrap(submitTreasureHunt),
 
   // Middleware (export for routes)
+
+  //sm practice
+  //getSmPracticeLabCategories
+  getSmPracticeLabFlow: wrap(getSmPracticeLabFlow),
+  submitSmPracticeLab: wrap(submitSmPracticeLab),
+  getSmPracticeLabCategories: wrap(getSmPracticeLabCategories),
   verifyToken,
 };

@@ -760,4 +760,40 @@ module.exports = {
     ),
   getSmPracticeLabSituationForApp: (req, res) =>
     handle(adminService.getSmPracticeLabSituationForApp(), res),
+  // ---------- SM Practice Lab - Powers ----------
+  addSmPracticeLabPower: (req, res) =>
+    handle(adminService.addSmPracticeLabPower(req.body), res),
+  getAllSmPracticeLabPowers: (req, res) =>
+    handle(adminService.getAllSmPracticeLabPowers(req.query), res),
+  getSmPracticeLabPowerById: (req, res) =>
+    handle(
+      adminService.getSmPracticeLabPowerById({ powerId: req.params.id }),
+      res,
+    ),
+  updateSmPracticeLabPower: (req, res) =>
+    handle(
+      adminService.updateSmPracticeLabPower({
+        powerId: req.params.id,
+        ...req.body,
+      }),
+      res,
+    ),
+  deleteSmPracticeLabPower: (req, res) =>
+    handle(
+      adminService.deleteSmPracticeLabPower({ powerId: req.params.id }),
+      res,
+    ),
+  // ---------- Stories New ----------
+  addStoryNew: (req, res) => handle(adminService.addStoryNew(req.body), res),
+  getAllStoriesNew: (req, res) =>
+    handle(adminService.getAllStoriesNew(req.query), res),
+  getStoryNewById: (req, res) =>
+    handle(adminService.getStoryNewById({ storyId: req.params.id }), res),
+  updateStoryNew: (req, res) =>
+    handle(
+      adminService.updateStoryNew({ storyId: req.params.id, ...req.body }),
+      res,
+    ),
+  deleteStoryNew: (req, res) =>
+    handle(adminService.deleteStoryNew({ storyId: req.params.id }), res),
 };

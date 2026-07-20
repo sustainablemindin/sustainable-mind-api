@@ -18,18 +18,31 @@ router.post("/verify-otp", userController.verifyOtp);
 router.post("/login", userController.loginWithPassword);
 router.get("/categories", userController.getCategories);
 
+/* ============== USER - STORIES ============== */
+router.get("/stories-new", userController.getStoriesNewForApp);
+router.get("/story-new/:id", userController.getStoryNewForApp);
+router.post("/submit-story-new", userController.submitStoryNew);
+router.post("/complete-story-new", userController.completeStoryNew);
+
 /* ============== USER - PROFILE ============== */
 router.post("/profile", userController.getProfile);
 router.put("/profile", userController.updateProfile);
 router.put("/change-password", userController.changePassword);
 router.delete("/delete-account", userController.deleteAccount);
 
+/* ============== USER - PROFILE ============== */
+router.get("/coin-invest/:userId", userController.getCoinInvest);
+router.post("/submit-coin-invest", userController.submitCoinInvest);
 /* ============== USER - SM PRACTICE LAB ============== */
 router.get("/sm-practice-lab", userController.getSmPracticeLabFlow);
 router.post("/submit-sm-practice-lab", userController.submitSmPracticeLab);
 router.get(
-  "/sm-practice-lab-categories",
+  "/sm-practice-lab-categories/:power",
   userController.getSmPracticeLabCategories,
+);
+router.get(
+  "/sm-practice-lab-power/:userId",
+  userController.getSmPracticeLabPowersForApp,
 );
 
 /* ============== USER - STORIES (browse) ============== */
@@ -377,7 +390,37 @@ router.delete(
   "/admin/delete-sm-practice-lab-situation/:id",
   adminController.deleteSmPracticeLabSituation,
 );
+router.post(
+  "/admin/add-sm-practice-lab-power",
+  adminController.addSmPracticeLabPower,
+);
+router.get(
+  "/admin/sm-practice-lab-powers",
+  adminController.getAllSmPracticeLabPowers,
+);
+router.get(
+  "/admin/sm-practice-lab-power/:id",
+  adminController.getSmPracticeLabPowerById,
+);
+router.put(
+  "/admin/update-sm-practice-lab-power/:id",
+  adminController.updateSmPracticeLabPower,
+);
+router.delete(
+  "/admin/delete-sm-practice-lab-power/:id",
+  adminController.deleteSmPracticeLabPower,
+);
+// ---------- Story----------
+
+router.post("/admin/add-story-new", adminController.addStoryNew);
+router.get("/admin/stories-new", adminController.getAllStoriesNew);
+router.get("/admin/story-new/:id", adminController.getStoryNewById);
+router.put("/admin/update-story-new/:id", adminController.updateStoryNew);
+router.delete("/admin/delete-story-new/:id", adminController.deleteStoryNew);
 
 // ---------- SM Practice Lab - App side ----------
-router.get("/sm-practice-lab", adminController.getSmPracticeLabSituationForApp);
+router.get(
+  "/sm-practice-lab-old",
+  adminController.getSmPracticeLabSituationForApp,
+);
 module.exports = router;

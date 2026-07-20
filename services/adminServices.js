@@ -14,6 +14,467 @@ const HAC = "helpful-action-categories";
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const FRIENDS = ["blaze", "shello", "champ", "tejix"];
 
+const buildScreens = (screens) => {
+  if (!Array.isArray(screens)) return [];
+  return screens.map((s) => {
+    const base = {
+      _id: s._id ? String(s._id) : new ObjectId().toString(),
+      type: String(s.type || "").trim(),
+    };
+
+    switch (base.type) {
+      case "story":
+        return {
+          ...base,
+          heading: str(s.heading),
+          bodyText: str(s.bodyText),
+          images: arr(s.images).map(str),
+          audioUrl: str(s.audioUrl),
+          tejixText: str(s.tejixText),
+        };
+      case "realLife":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          bodyText: str(s.bodyText),
+          image: str(s.image),
+          audioUrl: str(s.audioUrl),
+          tejixText: str(s.tejixText),
+        };
+      case "mcq":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          subtitle: str(s.subtitle),
+          image: str(s.image),
+          options: arr(s.options).map((o) => ({
+            key: str(o.key),
+            text: str(o.text),
+          })),
+          correct: str(s.correct),
+          smKeyReward: num(s.smKeyReward),
+          tejixText: str(s.tejixText),
+        };
+      case "insight":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          image: str(s.image),
+          bodyText: str(s.bodyText),
+          treasures: arr(s.treasures).map((t) => ({
+            icon: str(t.icon),
+            label: str(t.label),
+            variant: str(t.variant) || "lost",
+          })),
+        };
+      case "multiSelect":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          subtitle: str(s.subtitle),
+          image: str(s.image),
+          options: arr(s.options).map((o) => ({
+            key: str(o.key),
+            icon: str(o.icon),
+            label: str(o.label),
+          })),
+          correct: arr(s.correct).map(str),
+          smKeyReward: num(s.smKeyReward),
+          tejixText: str(s.tejixText),
+        };
+      case "unlock":
+        return {
+          ...base,
+          heading: str(s.heading),
+          subtitle: str(s.subtitle),
+          powerNumber: num(s.powerNumber),
+          stepGrid: {
+            total: num(s.stepGrid && s.stepGrid.total),
+            current: num(s.stepGrid && s.stepGrid.current),
+          },
+          treasureEarned: str(s.treasureEarned),
+          rewards: {
+            smKeys: num(s.rewards && s.rewards.smKeys),
+            badges: num(s.rewards && s.rewards.badges),
+            heartPoints: num(s.rewards && s.rewards.heartPoints),
+          },
+        };
+      case "checklist":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          image: str(s.image),
+          items: arr(s.items).map((i) => ({
+            label: str(i.label),
+            checked: i.checked === true,
+          })),
+          tejixText: str(s.tejixText),
+        };
+      case "summary":
+        return {
+          ...base,
+          label: str(s.label),
+          heading: str(s.heading),
+          summaryIntro: str(s.summaryIntro),
+          points: arr(s.points).map(str),
+          ladder: arr(s.ladder).map((l) => ({
+            number: num(l.number),
+            label: str(l.label),
+          })),
+          tejixText: str(s.tejixText),
+        };
+      default:
+        return base; // unknown type - kept minimal, admin should not send this
+    }
+  });
+};
+
+const str = (v) => (v === undefined || v === null ? "" : String(v).trim());
+const num = (v) => (Number(v) > 0 || Number(v) === 0 ? Number(v) : 0);
+const arr = (v) => (Array.isArray(v) ? v : []);
+
+// ---------------------------------------------------------------- create
+const addStoryNew = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.title || !data.title.trim()) {
+      return reject({ status: 400, message: "Title is required", data: [] });
+    }
+
+    const doc = {
+      title: str(data.title),
+      author: str(data.author),
+      status: data.status === "published" ? "published" : "draft",
+      coverImage: str(data.coverImage),
+      summary: str(data.summary),
+      power: str(data.power),
+      powerNumber: num(data.powerNumber),
+      subtitle: str(data.subtitle),
+      ageGroup: str(data.ageGroup),
+      category: str(data.category),
+      tags: arr(data.tags).map(str),
+      treasureEarned: str(data.treasureEarned),
+      rewards: {
+        smKeys: num(data.rewards && data.rewards.smKeys),
+        badges: num(data.rewards && data.rewards.badges),
+        heartPoints: num(data.rewards && data.rewards.heartPoints),
+      },
+      order: num(data.order),
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      screens: buildScreens(data.screens),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    db.collection("stories-new")
+      .insertOne(doc)
+      .then((r) =>
+        resolve({
+          status: 200,
+          message: "Story created",
+          data: [{ _id: r.insertedId, ...doc }],
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to create story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// ---------------------------------------------------------------- list
+const getAllStoriesNew = (filters) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const query = {};
+    if (filters && filters.search) {
+      const safe = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.title = { $regex: safe, $options: "i" };
+    }
+    if (filters && filters.power) query.power = filters.power;
+    if (filters && filters.status) query.status = filters.status;
+
+    const page = Number(filters && filters.page) > 0 ? Number(filters.page) : 1;
+    const limit =
+      Number(filters && filters.limit) > 0 ? Number(filters.limit) : 10;
+    const skip = (page - 1) * limit;
+
+    const col = db.collection("stories-new");
+
+    col
+      .countDocuments(query)
+      .then((total) => {
+        return (
+          col
+            .find(query)
+            // list view is light - skip the heavy screens array
+            .project({ screens: 0 })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .toArray()
+            .then((items) =>
+              resolve({
+                status: 200,
+                message: "Stories fetched",
+                data: items,
+                pagination: {
+                  total: total,
+                  page: page,
+                  limit: limit,
+                  totalPages: Math.ceil(total / limit) || 1,
+                },
+              }),
+            )
+        );
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch stories",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// ---------------------------------------------------------------- read one
+const getStoryNewById = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("stories-new")
+      .findOne({ _id: new ObjectId(data.storyId) })
+      .then((r) =>
+        r
+          ? resolve({ status: 200, message: "Story fetched", data: [r] })
+          : reject({ status: 404, message: "Story not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to fetch story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// ---------------------------------------------------------------- update
+const updateStoryNew = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const updates = { updatedAt: new Date() };
+
+    if (data.title !== undefined) updates.title = str(data.title);
+    if (data.author !== undefined) updates.author = str(data.author);
+    if (data.status !== undefined)
+      updates.status = data.status === "published" ? "published" : "draft";
+    if (data.coverImage !== undefined)
+      updates.coverImage = str(data.coverImage);
+    if (data.summary !== undefined) updates.summary = str(data.summary);
+    if (data.power !== undefined) updates.power = str(data.power);
+    if (data.powerNumber !== undefined)
+      updates.powerNumber = num(data.powerNumber);
+    if (data.subtitle !== undefined) updates.subtitle = str(data.subtitle);
+    if (data.ageGroup !== undefined) updates.ageGroup = str(data.ageGroup);
+    if (data.category !== undefined) updates.category = str(data.category);
+    if (data.tags !== undefined) updates.tags = arr(data.tags).map(str);
+    if (data.treasureEarned !== undefined)
+      updates.treasureEarned = str(data.treasureEarned);
+    if (data.rewards !== undefined)
+      updates.rewards = {
+        smKeys: num(data.rewards && data.rewards.smKeys),
+        badges: num(data.rewards && data.rewards.badges),
+        heartPoints: num(data.rewards && data.rewards.heartPoints),
+      };
+    if (data.order !== undefined) updates.order = num(data.order);
+    if (data.isActive !== undefined) updates.isActive = data.isActive;
+    if (data.screens !== undefined)
+      updates.screens = buildScreens(data.screens);
+
+    db.collection("stories-new")
+      .updateOne({ _id: new ObjectId(data.storyId) }, { $set: updates })
+      .then((r) =>
+        r.matchedCount
+          ? resolve({ status: 200, message: "Story updated", data: [] })
+          : reject({ status: 404, message: "Story not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to update story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// ---------------------------------------------------------------- delete
+const deleteStoryNew = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("stories-new")
+      .deleteOne({ _id: new ObjectId(data.storyId) })
+      .then((r) =>
+        r.deletedCount
+          ? resolve({ status: 200, message: "Story deleted", data: [] })
+          : reject({ status: 404, message: "Story not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to delete story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const addSmPracticeLabPower = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.name || !data.name.trim()) {
+      return reject({
+        status: 400,
+        message: "Power name is required",
+        data: [],
+      });
+    }
+    const doc = {
+      name: data.name.trim(),
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    db.collection("sm-practice-lab-power")
+      .insertOne(doc)
+      .then((r) =>
+        resolve({
+          status: 200,
+          message: "Power created",
+          data: [{ _id: r.insertedId, ...doc }],
+        }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to create power",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getAllSmPracticeLabPowers = (filters) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const query = {};
+    if (filters && filters.search) {
+      const safe = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.name = { $regex: safe, $options: "i" };
+    }
+    if (filters && filters.status)
+      query.isActive = filters.status.toLowerCase() === "active";
+
+    db.collection("sm-practice-lab-power")
+      .find(query)
+      .sort({ name: 1 })
+      .toArray()
+      .then((items) =>
+        resolve({ status: 200, message: "Powers fetched", data: items }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch powers",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const getSmPracticeLabPowerById = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-power")
+      .findOne({ _id: new ObjectId(data.powerId) })
+      .then((r) =>
+        r
+          ? resolve({ status: 200, message: "Power fetched", data: [r] })
+          : reject({ status: 404, message: "Power not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to fetch power",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const updateSmPracticeLabPower = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const updates = { updatedAt: new Date() };
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.isActive !== undefined) updates.isActive = data.isActive;
+
+    db.collection("sm-practice-lab-power")
+      .updateOne({ _id: new ObjectId(data.powerId) }, { $set: updates })
+      .then((r) =>
+        r.matchedCount
+          ? resolve({ status: 200, message: "Power updated", data: [] })
+          : reject({ status: 404, message: "Power not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to update power",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+const deleteSmPracticeLabPower = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    db.collection("sm-practice-lab-power")
+      .deleteOne({ _id: new ObjectId(data.powerId) })
+      .then((r) =>
+        r.deletedCount
+          ? resolve({ status: 200, message: "Power deleted", data: [] })
+          : reject({ status: 404, message: "Power not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to delete power",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
 const addSmPracticeLabCategory = (data) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
@@ -149,6 +610,7 @@ const deleteSmPracticeLabCategory = (data) => {
 const addSmPracticeLabSituation = (data) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
+
     if (!data.situation || !data.situation.trim()) {
       return reject({
         status: 400,
@@ -156,15 +618,11 @@ const addSmPracticeLabSituation = (data) => {
         data: [],
       });
     }
+    if (!data.power || !data.power.trim()) {
+      return reject({ status: 400, message: "Power is required", data: [] });
+    }
     if (!data.category || !data.category.trim()) {
       return reject({ status: 400, message: "Category is required", data: [] });
-    }
-    if (!DIFFICULTIES.includes(data.difficulty)) {
-      return reject({
-        status: 400,
-        message: "Difficulty must be Easy, Medium or Hard",
-        data: [],
-      });
     }
     if (!(Number(data.smKeyReward) > 0)) {
       return reject({
@@ -181,16 +639,41 @@ const addSmPracticeLabSituation = (data) => {
         data: [],
       });
     }
+    if (!data.tejixInsight || !String(data.tejixInsight).trim()) {
+      return reject({
+        status: 400,
+        message: "Tejix Insight is required",
+        data: [],
+      });
+    }
 
     const doc = {
-      situation: data.situation.trim(),
+      situationId: data.situationId ? String(data.situationId).trim() : "",
+      power: data.power.trim(),
       category: data.category.trim(),
-      difficulty: data.difficulty,
+      level: data.level ? String(data.level).trim() : "",
+      ageGroup: data.ageGroup ? String(data.ageGroup).trim() : "",
+      situation: data.situation.trim(),
       smKeyReward: Number(data.smKeyReward),
       blaze: String(data.blaze).trim(),
       shello: String(data.shello).trim(),
       champ: String(data.champ).trim(),
       tejix: String(data.tejix).trim(),
+      tejixInsight: String(data.tejixInsight).trim(),
+      hiddenTopic: data.hiddenTopic ? String(data.hiddenTopic).trim() : "",
+      lifeSkill: data.lifeSkill ? String(data.lifeSkill).trim() : "",
+      primaryEmotion: data.primaryEmotion
+        ? String(data.primaryEmotion).trim()
+        : "",
+      indriya: data.indriya ? String(data.indriya).trim() : "",
+      gitaChapters: data.gitaChapters ? String(data.gitaChapters).trim() : "",
+      chapter2Psychology: data.chapter2Psychology
+        ? String(data.chapter2Psychology).trim()
+        : "",
+      threeGunas: data.threeGunas ? String(data.threeGunas).trim() : "",
+      dashavatara: data.dashavatara ? String(data.dashavatara).trim() : "",
+      treasure: data.treasure ? String(data.treasure).trim() : "",
+      focusAreas: data.focusAreas ? String(data.focusAreas).trim() : "",
       isActive: data.isActive !== undefined ? data.isActive : true,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -227,6 +710,7 @@ const bulkAddSmPracticeLabSituations = (data) => {
     const docs = [];
     for (let i = 0; i < data.items.length; i++) {
       const it = data.items[i];
+
       if (!it.situation || !String(it.situation).trim()) {
         return reject({
           status: 400,
@@ -234,17 +718,17 @@ const bulkAddSmPracticeLabSituations = (data) => {
           data: [],
         });
       }
+      if (!it.power || !String(it.power).trim()) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: power is required`,
+          data: [],
+        });
+      }
       if (!it.category || !String(it.category).trim()) {
         return reject({
           status: 400,
           message: `Row ${i + 1}: category is required`,
-          data: [],
-        });
-      }
-      if (!DIFFICULTIES.includes(it.difficulty)) {
-        return reject({
-          status: 400,
-          message: `Row ${i + 1}: difficulty must be Easy, Medium or Hard`,
           data: [],
         });
       }
@@ -263,16 +747,41 @@ const bulkAddSmPracticeLabSituations = (data) => {
           data: [],
         });
       }
+      if (!it.tejixInsight || !String(it.tejixInsight).trim()) {
+        return reject({
+          status: 400,
+          message: `Row ${i + 1}: Tejix Insight is required`,
+          data: [],
+        });
+      }
 
       docs.push({
-        situation: String(it.situation).trim(),
+        situationId: it.situationId ? String(it.situationId).trim() : "",
+        power: String(it.power).trim(),
         category: String(it.category).trim(),
-        difficulty: it.difficulty,
+        level: it.level ? String(it.level).trim() : "",
+        ageGroup: it.ageGroup ? String(it.ageGroup).trim() : "",
+        situation: String(it.situation).trim(),
         smKeyReward: Number(it.smKeyReward),
         blaze: String(it.blaze).trim(),
         shello: String(it.shello).trim(),
         champ: String(it.champ).trim(),
         tejix: String(it.tejix).trim(),
+        tejixInsight: String(it.tejixInsight).trim(),
+        hiddenTopic: it.hiddenTopic ? String(it.hiddenTopic).trim() : "",
+        lifeSkill: it.lifeSkill ? String(it.lifeSkill).trim() : "",
+        primaryEmotion: it.primaryEmotion
+          ? String(it.primaryEmotion).trim()
+          : "",
+        indriya: it.indriya ? String(it.indriya).trim() : "",
+        gitaChapters: it.gitaChapters ? String(it.gitaChapters).trim() : "",
+        chapter2Psychology: it.chapter2Psychology
+          ? String(it.chapter2Psychology).trim()
+          : "",
+        threeGunas: it.threeGunas ? String(it.threeGunas).trim() : "",
+        dashavatara: it.dashavatara ? String(it.dashavatara).trim() : "",
+        treasure: it.treasure ? String(it.treasure).trim() : "",
+        focusAreas: it.focusAreas ? String(it.focusAreas).trim() : "",
         isActive: it.isActive !== undefined ? it.isActive : true,
         createdAt: now,
         updatedAt: now,
@@ -307,8 +816,9 @@ const getAllSmPracticeLabSituations = (filters) => {
       const safe = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.situation = { $regex: safe, $options: "i" };
     }
+    if (filters && filters.power) query.power = filters.power;
     if (filters && filters.category) query.category = filters.category;
-    if (filters && filters.difficulty) query.difficulty = filters.difficulty;
+    if (filters && filters.level) query.level = filters.level;
     if (filters && filters.status)
       query.isActive = filters.status.toLowerCase() === "active";
 
@@ -379,14 +889,31 @@ const updateSmPracticeLabSituation = (data) => {
     const db = getDb();
     const updates = { updatedAt: new Date() };
     if (data.situation !== undefined) updates.situation = data.situation;
+    if (data.power !== undefined) updates.power = data.power;
     if (data.category !== undefined) updates.category = data.category;
-    if (data.difficulty !== undefined) updates.difficulty = data.difficulty;
+    if (data.level !== undefined) updates.level = data.level;
+    if (data.ageGroup !== undefined) updates.ageGroup = data.ageGroup;
     if (data.smKeyReward !== undefined)
       updates.smKeyReward = Number(data.smKeyReward);
     if (data.blaze !== undefined) updates.blaze = data.blaze;
     if (data.shello !== undefined) updates.shello = data.shello;
     if (data.champ !== undefined) updates.champ = data.champ;
     if (data.tejix !== undefined) updates.tejix = data.tejix;
+    if (data.tejixInsight !== undefined)
+      updates.tejixInsight = data.tejixInsight;
+    if (data.hiddenTopic !== undefined) updates.hiddenTopic = data.hiddenTopic;
+    if (data.lifeSkill !== undefined) updates.lifeSkill = data.lifeSkill;
+    if (data.primaryEmotion !== undefined)
+      updates.primaryEmotion = data.primaryEmotion;
+    if (data.indriya !== undefined) updates.indriya = data.indriya;
+    if (data.gitaChapters !== undefined)
+      updates.gitaChapters = data.gitaChapters;
+    if (data.chapter2Psychology !== undefined)
+      updates.chapter2Psychology = data.chapter2Psychology;
+    if (data.threeGunas !== undefined) updates.threeGunas = data.threeGunas;
+    if (data.dashavatara !== undefined) updates.dashavatara = data.dashavatara;
+    if (data.treasure !== undefined) updates.treasure = data.treasure;
+    if (data.focusAreas !== undefined) updates.focusAreas = data.focusAreas;
     if (data.isActive !== undefined) updates.isActive = data.isActive;
 
     db.collection("sm-practice-lab-situation")
@@ -3591,4 +4118,18 @@ module.exports = {
   updateSmPracticeLabSituation: wrap(updateSmPracticeLabSituation),
   deleteSmPracticeLabSituation: wrap(deleteSmPracticeLabSituation),
   getSmPracticeLabSituationForApp: wrap(getSmPracticeLabSituationForApp),
+
+  // ---------- SM Practice Lab - Powers ----------
+  addSmPracticeLabPower: wrap(addSmPracticeLabPower),
+  getAllSmPracticeLabPowers: wrap(getAllSmPracticeLabPowers),
+  getSmPracticeLabPowerById: wrap(getSmPracticeLabPowerById),
+  updateSmPracticeLabPower: wrap(updateSmPracticeLabPower),
+  deleteSmPracticeLabPower: wrap(deleteSmPracticeLabPower),
+
+  // ---------- Stories New ----------
+  addStoryNew: wrap(addStoryNew),
+  getAllStoriesNew: wrap(getAllStoriesNew),
+  getStoryNewById: wrap(getStoryNewById),
+  updateStoryNew: wrap(updateStoryNew),
+  deleteStoryNew: wrap(deleteStoryNew),
 };

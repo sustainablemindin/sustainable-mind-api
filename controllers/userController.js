@@ -479,9 +479,111 @@ module.exports = {
         });
       });
   },
+  getSmPracticeLabPowersForApp: (req, res, next) => {
+    userService
+      .getSmPracticeLabPowersForApp({ userId: req.params.userId })
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
   getSmPracticeLabCategories: (req, res, next) => {
     userService
-      .getSmPracticeLabCategories()
+      .getSmPracticeLabCategories({ power: req.params.power })
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+  getCoinInvest: (req, res, next) => {
+    userService
+      .getCoinInvest({ userId: req.params.userId })
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+
+  submitCoinInvest: (req, res, next) => {
+    userService
+      .submitCoinInvest(req.body)
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+  getStoriesNewForApp: (req, res, next) => {
+    userService
+      .getStoriesNewForApp(req.query)
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+
+  getStoryNewForApp: (req, res, next) => {
+    userService
+      .getStoryNewForApp({ storyId: req.params.id })
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+
+  submitStoryNew: (req, res, next) => {
+    userService
+      .submitStoryNew(req.body)
+      .then((result) => {
+        res.status(result.status || 200).send(result);
+      })
+      .catch((err) => {
+        res.status(err.status || 500).send({
+          status: err.status || 500,
+          message: err.message ? err.message : "Internal server error.",
+          data: err.data || [],
+        });
+      });
+  },
+
+  completeStoryNew: (req, res, next) => {
+    userService
+      .completeStoryNew(req.body)
       .then((result) => {
         res.status(result.status || 200).send(result);
       })

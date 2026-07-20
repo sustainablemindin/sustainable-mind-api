@@ -22,20 +22,483 @@ function dayBounds() {
   end.setHours(23, 59, 59, 999);
   return { start, end };
 }
-const getSmPracticeLabCategories = () => {
+
+const getStoryNewForApp = (data) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
-    db.collection("sm-practice-lab-category")
-      .find({ isActive: true })
-      .sort({ name: 1 })
+    if (!data.storyId) {
+      return reject({ status: 400, message: "storyId required", data: [] });
+    }
+    db.collection("stories-new")
+      .findOne({ _id: new ObjectId(data.storyId) })
+      .then((story) =>
+        story
+          ? resolve({ status: 200, message: "Story fetched", data: [story] })
+          : reject({ status: 404, message: "Story not found", data: [] }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to fetch story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// List of published stories (for the stories home).
+const getStoriesNewForApp = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    const query = { isActive: true, status: "published" };
+    if (data && data.power) query.power = data.power;
+
+    db.collection("stories-new")
+      .find(query)
+      .project({ screens: 0 })
+      .sort({ order: 1, createdAt: -1 })
       .toArray()
       .then((items) =>
-        resolve({ status: 200, message: "Categories fetched", data: items }),
+        resolve({ status: 200, message: "Stories fetched", data: items }),
+      )
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch stories",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// Submit an mcq / multiSelect answer for one screen.
+const submitStoryNew = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+    if (!data.storyId) {
+      return reject({ status: 400, message: "storyId required", data: [] });
+    }
+    if (!data.screenId) {
+      return reject({ status: 400, message: "screenId required", data: [] });
+    }
+
+    db.collection("stories-new")
+      .findOne({ _id: new ObjectId(data.storyId) })
+      .then((story) => {
+        if (!story) {
+          return reject({ status: 404, message: "Story not found", data: [] });
+        }
+        const screen = (story.screens || []).find(
+          (s) => String(s._id) === String(data.screenId),
+        );
+        if (!screen) {
+          return reject({ status: 404, message: "Screen not found", data: [] });
+        }
+
+        let isCorrect = false;
+        if (screen.type === "mcq") {
+          isCorrect =
+            String(data.answer || "").trim() ===
+            String(screen.correct || "").trim();
+        } else if (screen.type === "multiSelect") {
+          const given = Array.isArray(data.answers)
+            ? data.answers.map(String).sort()
+            : [];
+          const correct = Array.isArray(screen.correct)
+            ? screen.correct.map(String).sort()
+            : [];
+          isCorrect =
+            given.length === correct.length &&
+            given.every((v, i) => v === correct[i]);
+        } else {
+          return reject({
+            status: 400,
+            message: "Screen is not answerable",
+            data: [],
+          });
+        }
+
+        const keysEarned = isCorrect ? Number(screen.smKeyReward) || 0 : 0;
+
+        const entry = {
+          userId: data.userId,
+          storyId: story._id,
+          screenId: String(data.screenId),
+          screenType: screen.type,
+          answer: data.answer !== undefined ? data.answer : null,
+          answers: Array.isArray(data.answers) ? data.answers : [],
+          isCorrect: isCorrect,
+          keysEarned: keysEarned,
+          createdAt: new Date(),
+        };
+
+        return db
+          .collection("stories-new-submit")
+          .insertOne(entry)
+          .then(() => {
+            if (!isCorrect) {
+              return resolve({
+                status: 200,
+                message: "Not quite. Try again!",
+                data: [{ isCorrect: false, keysEarned: 0, sm_key: null }],
+              });
+            }
+            return db
+              .collection("users")
+              .findOneAndUpdate(
+                { _id: new ObjectId(data.userId) },
+                {
+                  $inc: { sm_key: keysEarned },
+                  $set: { updatedAt: new Date() },
+                },
+                { returnDocument: "after" },
+              )
+              .then((result) => {
+                const user = result && result.value ? result.value : null;
+                resolve({
+                  status: 200,
+                  message: "Answer correct",
+                  data: [
+                    {
+                      isCorrect: true,
+                      keysEarned: keysEarned,
+                      sm_key: user ? user.sm_key : keysEarned,
+                    },
+                  ],
+                });
+              });
+          });
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to submit answer",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+
+// Grant story rewards once (keys, badges, heart points).
+const completeStoryNew = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+    if (!data.storyId) {
+      return reject({ status: 400, message: "storyId required", data: [] });
+    }
+
+    const userId = new ObjectId(data.userId);
+    const storyId = new ObjectId(data.storyId);
+
+    Promise.all([
+      db.collection("stories-new").findOne({ _id: storyId }),
+      db
+        .collection("stories-new-complete")
+        .findOne({ userId: data.userId, storyId: storyId }),
+    ])
+      .then(([story, already]) => {
+        if (!story) {
+          return reject({ status: 404, message: "Story not found", data: [] });
+        }
+        const rewards = story.rewards || {
+          smKeys: 0,
+          badges: 0,
+          heartPoints: 0,
+        };
+
+        // already completed - return current totals, no double grant
+        if (already) {
+          return db
+            .collection("users")
+            .findOne({ _id: userId })
+            .then((user) =>
+              resolve({
+                status: 200,
+                message: "Story already completed",
+                data: [
+                  {
+                    alreadyCompleted: true,
+                    rewards: rewards,
+                    sm_key: user ? user.sm_key : 0,
+                    badges: user ? user.badges : 0,
+                    heart_points: user ? user.heart_points : 0,
+                  },
+                ],
+              }),
+            );
+        }
+
+        return db
+          .collection("stories-new-complete")
+          .insertOne({
+            userId: data.userId,
+            storyId: storyId,
+            rewards: rewards,
+            createdAt: new Date(),
+          })
+          .then(() =>
+            db.collection("users").findOneAndUpdate(
+              { _id: userId },
+              {
+                $inc: {
+                  sm_key: Number(rewards.smKeys) || 0,
+                  badges: Number(rewards.badges) || 0,
+                  heart_points: Number(rewards.heartPoints) || 0,
+                },
+                $set: { updatedAt: new Date() },
+              },
+              { returnDocument: "after" },
+            ),
+          )
+          .then((result) => {
+            const user = result && result.value ? result.value : null;
+            resolve({
+              status: 200,
+              message: "Story completed",
+              data: [
+                {
+                  alreadyCompleted: false,
+                  rewards: rewards,
+                  sm_key: user ? user.sm_key : 0,
+                  badges: user ? user.badges : 0,
+                  heart_points: user ? user.heart_points : 0,
+                },
+              ],
+            });
+          });
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Unable to complete story",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+const submitCoinInvest = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+
+    const giving = Number(data.giving) || 0;
+    const spending = Number(data.spending) || 0;
+    const investing = Number(data.investing) || 0;
+    const total = Number(data.totalCoins) || 0;
+
+    if (giving + spending + investing !== total) {
+      return reject({
+        status: 400,
+        message: "Allocation must add up to the total coins",
+        data: [],
+      });
+    }
+
+    db.collection("users")
+      .findOne({ _id: new ObjectId(data.userId) })
+      .then((user) => {
+        if (!user) {
+          return reject({ status: 404, message: "User not found", data: [] });
+        }
+        if ((user.sm_key || 0) < total) {
+          return reject({
+            status: 400,
+            message: "Not enough coins to place",
+            data: [],
+          });
+        }
+
+        const entry = {
+          userId: data.userId,
+          totalCoins: total,
+          giving: giving,
+          spending: spending,
+          investing: investing,
+          createdAt: new Date(),
+        };
+
+        return db
+          .collection("coin-invest-submit")
+          .insertOne(entry)
+          .then(() =>
+            db.collection("users").findOneAndUpdate(
+              { _id: new ObjectId(data.userId) },
+              {
+                $inc: {
+                  sm_key: -total,
+                  giving_jar: giving,
+                  spending_jar: spending,
+                  investing_jar: investing,
+                },
+                $set: { updatedAt: new Date() },
+              },
+              { returnDocument: "after" },
+            ),
+          )
+          .then((result) => {
+            const updated = result && result.value ? result.value : null;
+            resolve({
+              status: 200,
+              message: "Coins placed",
+              data: [
+                {
+                  giving: giving,
+                  spending: spending,
+                  investing: investing,
+                  sm_key: updated ? updated.sm_key : (user.sm_key || 0) - total,
+                  giving_jar: updated ? updated.giving_jar : giving,
+                  spending_jar: updated ? updated.spending_jar : spending,
+                  investing_jar: updated ? updated.investing_jar : investing,
+                },
+              ],
+            });
+          });
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not place coins",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+const getCoinInvest = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+
+    if (!data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+
+    db.collection("users")
+      .findOne({ _id: new ObjectId(data.userId) })
+      .then((user) => {
+        if (!user) {
+          return reject({ status: 404, message: "User not found", data: [] });
+        }
+        resolve({
+          status: 200,
+          message: "Coins fetched",
+          data: [
+            {
+              totalCoins: user.sm_key || 0,
+              growth_gem: user.growth_gem || 0,
+              treasure_key: user.treasure_key || 0,
+            },
+          ],
+        });
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch coins",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+const getSmPracticeLabCategories = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data || !data.power) {
+      return reject({ status: 400, message: "power required", data: [] });
+    }
+    db.collection("sm-practice-lab-situation")
+      .distinct("category", { isActive: true, power: data.power })
+      .then((names) =>
+        resolve({
+          status: 200,
+          message: "Categories fetched",
+          data: names
+            .filter(Boolean)
+            .sort()
+            .map((name) => ({ name })),
+        }),
       )
       .catch((e) =>
         reject({
           status: 400,
           message: "Could not fetch categories",
+          data: [],
+          error: e.message,
+        }),
+      );
+  });
+};
+const getSmPracticeLabPowersForApp = (data) => {
+  return new Promise((resolve, reject) => {
+    const db = getDb();
+    if (!data || !data.userId) {
+      return reject({ status: 400, message: "userId required", data: [] });
+    }
+
+    Promise.all([
+      db
+        .collection("sm-practice-lab-power")
+        .find({ isActive: true })
+        .sort({ name: 1 })
+        .toArray(),
+      db
+        .collection("sm-practice-lab-situation")
+        .find({ isActive: true })
+        .project({ power: 1 })
+        .toArray(),
+      db
+        .collection("sm-practice-lab-submit")
+        .find({ userId: data.userId, isCorrect: true })
+        .toArray(),
+    ])
+      .then(([powers, situations, submits]) => {
+        const totals = {};
+        situations.forEach((s) => {
+          const p = s.power || "";
+          totals[p] = (totals[p] || 0) + 1;
+        });
+
+        const solvedByPower = {};
+        const seen = {};
+        submits.forEach((s) => {
+          const key = String(s.situationId);
+          if (seen[key]) return;
+          seen[key] = true;
+          const p = s.power || "";
+          solvedByPower[p] = (solvedByPower[p] || 0) + 1;
+        });
+
+        const items = powers.map((p) => {
+          const total = totals[p.name] || 0;
+          const solved = solvedByPower[p.name] || 0;
+          return {
+            _id: p._id,
+            name: p.name,
+            totalCount: total,
+            solvedCount: solved,
+            completed: total > 0 && solved >= total,
+          };
+        });
+
+        resolve({ status: 200, message: "Powers fetched", data: items });
+      })
+      .catch((e) =>
+        reject({
+          status: 400,
+          message: "Could not fetch powers",
           data: [],
           error: e.message,
         }),
@@ -51,11 +514,18 @@ const getSmPracticeLabFlow = (data) => {
     if (!data.userId) {
       return reject({ status: 400, message: "userId required", data: [] });
     }
+    if (!data.power) {
+      return reject({ status: 400, message: "power required", data: [] });
+    }
     if (!data.category) {
       return reject({ status: 400, message: "category required", data: [] });
     }
 
-    const query = { isActive: true, category: data.category };
+    const query = {
+      isActive: true,
+      power: data.power,
+      category: data.category,
+    };
 
     Promise.all([
       db
@@ -65,7 +535,12 @@ const getSmPracticeLabFlow = (data) => {
         .toArray(),
       db
         .collection("sm-practice-lab-submit")
-        .find({ userId: data.userId, category: data.category, isCorrect: true })
+        .find({
+          userId: data.userId,
+          power: data.power,
+          category: data.category,
+          isCorrect: true,
+        })
         .toArray(),
     ])
       .then(([situations, submits]) => {
@@ -135,9 +610,11 @@ const getSmPracticeLabFlow = (data) => {
               situation: {
                 _id: next._id,
                 situation: next.situation,
+                power: next.power,
                 category: next.category,
-                difficulty: next.difficulty,
+                level: next.level,
                 smKeyReward: next.smKeyReward,
+                tejixInsight: next.tejixInsight,
                 responses: responses,
               },
             },
@@ -198,9 +675,10 @@ const submitSmPracticeLab = (data) => {
         const entry = {
           userId: data.userId,
           situationId: situation._id,
+          power: situation.power,
           category: situation.category,
+          level: situation.level,
           situationText: situation.situation,
-          difficulty: situation.difficulty,
           answers: {
             blaze: String(data.answers.blaze || "").trim(),
             shello: String(data.answers.shello || "").trim(),
@@ -229,6 +707,7 @@ const submitSmPracticeLab = (data) => {
                     correctCount: correctCount,
                     results: results,
                     keysEarned: 0,
+                    tejixInsight: situation.tejixInsight || "",
                     sm_key: null,
                   },
                 ],
@@ -256,6 +735,7 @@ const submitSmPracticeLab = (data) => {
                       correctCount: correctCount,
                       results: results,
                       keysEarned: keysEarned,
+                      tejixInsight: situation.tejixInsight || "",
                       sm_key: user ? user.sm_key : keysEarned,
                     },
                   ],
@@ -1450,34 +1930,40 @@ const getHomeFeed = (data) => {
       });
   });
 };
-
+// App-facing paginated stories list (cursor pagination, no category).
+// Returns light docs (no screens) with the fields StoryGridCard reads.
 const getStoriesByCategory = (filters) => {
   return new Promise((resolve, reject) => {
     const db = getDb();
-    const query = { status: "published" };
+    const query = { status: "published", isActive: true };
 
-    if (filters.categoryId) {
+    // optional power filter
+    if (filters && filters.power) {
+      query.power = filters.power;
+    }
+
+    // cursor: fetch items older than lastId
+    if (filters && filters.lastId) {
       try {
-        query.categoryId = new ObjectId(filters.categoryId);
+        query._id = { $lt: new ObjectId(filters.lastId) };
       } catch (e) {
         return reject({
           status: 400,
-          message: "Invalid category id",
+          message: "Invalid lastId",
           data: [],
         });
       }
     }
 
-    if (filters.lastId) {
-      query._id = { $lt: new ObjectId(filters.lastId) };
-    }
-
-    const limit = parseInt(filters.limit) || 20;
+    const limit = parseInt(filters && filters.limit) || 20;
     const sortField =
-      filters.sort === "views" ? { views: -1, _id: -1 } : { _id: -1 };
+      filters && filters.sort === "views"
+        ? { views: -1, _id: -1 }
+        : { _id: -1 };
 
-    db.collection("stories")
+    db.collection("stories-new")
       .find(query)
+      .project({ screens: 0 }) // list is light, no screens
       .sort(sortField)
       .limit(limit)
       .toArray()
@@ -1504,6 +1990,60 @@ const getStoriesByCategory = (filters) => {
       });
   });
 };
+
+// const getStoriesByCategory = (filters) => {
+//   return new Promise((resolve, reject) => {
+//     const db = getDb();
+//     const query = { status: "published" };
+
+//     if (filters.categoryId) {
+//       try {
+//         query.categoryId = new ObjectId(filters.categoryId);
+//       } catch (e) {
+//         return reject({
+//           status: 400,
+//           message: "Invalid category id",
+//           data: [],
+//         });
+//       }
+//     }
+
+//     if (filters.lastId) {
+//       query._id = { $lt: new ObjectId(filters.lastId) };
+//     }
+
+//     const limit = parseInt(filters.limit) || 20;
+//     const sortField =
+//       filters.sort === "views" ? { views: -1, _id: -1 } : { _id: -1 };
+
+//     db.collection("stories")
+//       .find(query)
+//       .sort(sortField)
+//       .limit(limit)
+//       .toArray()
+//       .then((stories) => {
+//         const hasMore = stories.length === limit;
+//         const lastId =
+//           stories.length > 0
+//             ? stories[stories.length - 1]._id.toString()
+//             : null;
+//         resolve({
+//           status: 200,
+//           message: "Stories fetched",
+//           data: stories,
+//           pagination: { hasMore, lastId, limit },
+//         });
+//       })
+//       .catch((error) => {
+//         reject({
+//           status: 400,
+//           message: "Could not fetch stories",
+//           data: [],
+//           error: error.message,
+//         });
+//       });
+//   });
+// };
 
 const getStoryDetails = (data) => {
   return new Promise((resolve, reject) => {
@@ -2278,5 +2818,16 @@ module.exports = {
   getSmPracticeLabFlow: wrap(getSmPracticeLabFlow),
   submitSmPracticeLab: wrap(submitSmPracticeLab),
   getSmPracticeLabCategories: wrap(getSmPracticeLabCategories),
+  getSmPracticeLabPowersForApp: wrap(getSmPracticeLabPowersForApp),
   verifyToken,
+
+  // coin invest
+  getCoinInvest: wrap(getCoinInvest),
+  submitCoinInvest: wrap(submitCoinInvest),
+
+  // stories new (app)
+  getStoriesNewForApp: wrap(getStoriesNewForApp),
+  getStoryNewForApp: wrap(getStoryNewForApp),
+  submitStoryNew: wrap(submitStoryNew),
+  completeStoryNew: wrap(completeStoryNew),
 };

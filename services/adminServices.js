@@ -20,6 +20,7 @@ const buildScreens = (screens) => {
     const base = {
       _id: s._id ? String(s._id) : new ObjectId().toString(),
       type: String(s.type || "").trim(),
+      buttonText: str(s.buttonText),
     };
 
     switch (base.type) {
@@ -29,7 +30,7 @@ const buildScreens = (screens) => {
           heading: str(s.heading),
           bodyText: str(s.bodyText),
           images: arr(s.images).map(str),
-          audioUrl: str(s.audioUrl),
+          audioFile: str(s.audioFile),
           tejixText: str(s.tejixText),
         };
       case "realLife":
@@ -39,12 +40,57 @@ const buildScreens = (screens) => {
           heading: str(s.heading),
           bodyText: str(s.bodyText),
           image: str(s.image),
-          audioUrl: str(s.audioUrl),
+          audioFile: str(s.audioFile),
           tejixText: str(s.tejixText),
         };
-      case "mcq":
+      case "mcq": {
+        const mode =
+          str(s.mode) === "match"
+            ? "match"
+            : str(s.mode) === "list"
+              ? "list"
+              : "mcq";
+
+        if (mode === "match") {
+          return {
+            ...base,
+            mode: mode,
+            label: str(s.label),
+            heading: str(s.heading),
+            subtitle: str(s.subtitle),
+            image: str(s.image),
+            leftLabel: str(s.leftLabel),
+            rightLabel: str(s.rightLabel),
+            leftOptions: arr(s.leftOptions).map(str),
+            rightOptions: arr(s.rightOptions).map(str),
+            rows: arr(s.rows).map((r) => ({
+              correctLeft: str(r.correctLeft),
+              correctRight: str(r.correctRight),
+            })),
+            smKeyReward: num(s.smKeyReward),
+            tejixText: str(s.tejixText),
+          };
+        }
+
+        if (mode === "list") {
+          return {
+            ...base,
+            mode: mode,
+            label: str(s.label),
+            heading: str(s.heading),
+            subtitle: str(s.subtitle),
+            image: str(s.image),
+            options: arr(s.options).map((o) => ({
+              key: str(o.key),
+              text: str(o.text),
+            })),
+            tejixText: str(s.tejixText),
+          };
+        }
+
         return {
           ...base,
+          mode: mode,
           label: str(s.label),
           heading: str(s.heading),
           subtitle: str(s.subtitle),
@@ -57,6 +103,7 @@ const buildScreens = (screens) => {
           smKeyReward: num(s.smKeyReward),
           tejixText: str(s.tejixText),
         };
+      }
       case "insight":
         return {
           ...base,
@@ -64,11 +111,13 @@ const buildScreens = (screens) => {
           heading: str(s.heading),
           image: str(s.image),
           bodyText: str(s.bodyText),
+          itemsTitle: str(s.itemsTitle),
           treasures: arr(s.treasures).map((t) => ({
             icon: str(t.icon),
             label: str(t.label),
             variant: str(t.variant) || "lost",
           })),
+          tejixText: str(s.tejixText),
         };
       case "multiSelect":
         return {
@@ -91,6 +140,8 @@ const buildScreens = (screens) => {
           ...base,
           heading: str(s.heading),
           subtitle: str(s.subtitle),
+          bodyText: str(s.bodyText),
+          image: str(s.image),
           powerNumber: num(s.powerNumber),
           stepGrid: {
             total: num(s.stepGrid && s.stepGrid.total),
@@ -102,6 +153,7 @@ const buildScreens = (screens) => {
             badges: num(s.rewards && s.rewards.badges),
             heartPoints: num(s.rewards && s.rewards.heartPoints),
           },
+          tejixText: str(s.tejixText),
         };
       case "checklist":
         return {
@@ -121,10 +173,24 @@ const buildScreens = (screens) => {
           label: str(s.label),
           heading: str(s.heading),
           summaryIntro: str(s.summaryIntro),
+          image: str(s.image),
           points: arr(s.points).map(str),
           ladder: arr(s.ladder).map((l) => ({
             number: num(l.number),
             label: str(l.label),
+          })),
+          tejixText: str(s.tejixText),
+        };
+      case "wow":
+        return {
+          ...base,
+          heading: str(s.heading),
+          image: str(s.image),
+          lines: arr(s.lines).map(str),
+          itemsTitle: str(s.itemsTitle),
+          items: arr(s.items).map((i) => ({
+            icon: str(i.icon),
+            label: str(i.label),
           })),
           tejixText: str(s.tejixText),
         };

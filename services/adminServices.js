@@ -61,9 +61,13 @@ const buildScreens = (screens) => {
             image: str(s.image),
             leftLabel: str(s.leftLabel),
             rightLabel: str(s.rightLabel),
-            leftOptions: arr(s.leftOptions).map(str),
-            rightOptions: arr(s.rightOptions).map(str),
             rows: arr(s.rows).map((r) => ({
+              leftOptions: arr(r.leftOptions)
+                .map(str)
+                .filter((x) => x),
+              rightOptions: arr(r.rightOptions)
+                .map(str)
+                .filter((x) => x),
               correctLeft: str(r.correctLeft),
               correctRight: str(r.correctRight),
             })),
